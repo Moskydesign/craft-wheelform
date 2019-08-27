@@ -2,24 +2,43 @@
 namespace wheelform;
 
 use Craft;
-use yii\base\Component;
-use yii\helpers\Markdown;
-use craft\services\Assets;
-use wheelform\models\Form;
 use craft\helpers\FileHelper;
 use craft\helpers\StringHelper;
-use wheelform\events\SendEvent;
-use yii\base\InvalidConfigException;
 use craft\mail\Message as MailMessage;
+use wheelform\events\SendEvent;
+use wheelform\db\Form;
+use yii\base\InvalidConfigException;
+use yii\base\Component;
+
 
 class Mailer extends Component
 {
     const EVENT_BEFORE_SEND = 'beforeSend';
     const EVENT_AFTER_SEND = 'afterSend';
 
-    protected $defaultConfig = [
-        'template' => 'wheelform/_emails/general.twig',
+    protected $defaultTemplate = 'wheelform/_emails/general.twig';
+    protected $notificationTemplate = 'wheelform/_emails/notification.twig';
+
+    protected $config = [
+        'template' => '',
+        'notification' =>  [
+            'template' => '',
+            'subject' => '',
+        ],
     ];
+
+    protected $form = null;
+
+    protected $message = null;
+
+    public function __construct()
+    {
+        $config = Craft::$app->getConfig();
+        $customConfig = $config->getConfigFromFile('wheelform');
+        if(! empty($customConfig) && is_array($customConfig)) {
+            $this->config = array_replace_recursive($this->config, $customConfig);
+        }
+    }
 
     public function send(Form $form, array $message): bool
     {
@@ -29,22 +48,27 @@ class Mailer extends Component
             throw new InvalidConfigException(Craft::t('wheelform', "Plugin settings need to be configured."));
         }
 
+        $this->form = $form;
+        $this->message = $message;
+
         // Prep the message Variables
-        $defaultSubject = $form->name . " - " . Craft::t("wheelform", 'Submission');
+        $defaultSubject = $this->form->name . " - " . Craft::t("wheelform", 'Submission');
+        $subject = (!empty($this->form->options['email_subject']) ? $this->form->options['email_subject'] : $defaultSubject);
         $from_email = $settings->from_email;
         // Grab any "to" emails set in the form settings.
-        $to_emails = StringHelper::split($form->to_email);
+        $to_emails = StringHelper::split($this->form->to_email);
         $mailMessage = new MailMessage();
         $mailer = Craft::$app->getMailer();
         $text = '';
 
         $beforeEvent = new SendEvent([
-            'form_id' => $form->id,
-            'subject' => $defaultSubject,
+            'form_id' => $this->form->id,
+            'subject' => $subject,
             'message' => $message,
             'from' => $from_email,
             'to' => $to_emails,
-            'reply_to' => '',
+            'reply_to' => $this->getReplyToEmail(),
+            'email_html' => '',
         ]);
 
         $this->trigger(self::EVENT_BEFORE_SEND, $beforeEvent);
@@ -91,7 +115,11 @@ class Mailer extends Component
             }
         }
 
-        $html_body = $this->compileHtmlBody($beforeEvent->message);
+        if(! empty($beforeEvent->email_html)) {
+            $html_body = $beforeEvent->email_html;
+        } else {
+            $html_body = $this->compileHtmlBody($beforeEvent->message);
+        }
 
         $mailMessage->setFrom($beforeEvent->from);
         $mailMessage->setSubject($beforeEvent->subject);
@@ -121,35 +149,130 @@ class Mailer extends Component
             'from' => $beforeEvent->from,
             'to' => $beforeEvent->to,
             'reply_to' => $beforeEvent->reply_to,
+            'email_html' => $beforeEvent->email_html,
         ]);
         $this->trigger(self::EVENT_AFTER_SEND, $afterEvent);
+
+        $sendNotification = (empty($this->form->options['user_notification']) ? false : boolval($this->form->options['user_notification']));
+        if($sendNotification) {
+            $notificationTo = "";
+            foreach($this->form->fields as $field) {
+                if($field->type !== 'email') {
+                    continue;
+                }
+
+                if(! empty($field->options['is_user_notification_field'])) {
+                    $notificationTo = $beforeEvent->message[$field->name]['value'];
+                }
+            }
+
+            if(! empty($notificationTo)) {
+                $notificationSubject = $this->form->name . " - " . Craft::t("wheelform", 'Notification');
+                // Generic Notification Subject
+                if(! empty($this->config['notification']['subject'])) {
+                    $notificationSubject = $this->config['notification']['subject'];
+                }
+
+                //Form specific Notification Subject
+                if(! empty($this->config['forms'][$this->form->id]['notification']['subject'])) {
+                    $notificationSubject = $this->config['forms'][$this->form->id]['notification']['subject'];
+                }
+
+                $notificationText = (! empty($this->form->options['user_notification_message']) ? $this->form->options['user_notification_message'] : "");
+
+                $notificationHtml = $this->getNotificationHtml($beforeEvent->message, $notificationText);
+
+                $userNotification = new MailMessage();
+                $userNotification->setFrom($from_email);
+                $userNotification->setSubject($notificationSubject);
+                $userNotification->setTextBody($notificationText);
+                $userNotification->setHtmlBody($notificationHtml);
+                $userNotification->setTo($notificationTo);
+                $mailer->send($userNotification);
+            }
+        }
 
         return true;
     }
 
-    public function compileHtmlBody(array $variables)
+    protected function getReplyToEmail()
     {
-        $config = Craft::$app->getConfig();
-        $customConfig =$config->getConfigFromFile('wheelform');
-        $view = Craft::$app->getView();
-        $templateMode = $view->getTemplateMode();
+        foreach($this->form->fields as $field) {
+            if($field->type !== "email") {
+                continue;
+            }
 
-        $view->setTemplateMode($view::TEMPLATE_MODE_CP);
-        $template = $this->defaultConfig['template'];
-
-        if(is_array($customConfig)) {
-            if(array_key_exists('template', $customConfig)) {
-                $view->setTemplateMode($view::TEMPLATE_MODE_SITE);
-                $template = $customConfig['template'];
+            if(! empty($field->options['is_reply_to'])) {
+                if(! empty($this->message[$field->name]['value'])) {
+                    return $this->message[$field->name]['value'];
+                }
             }
         }
 
+        return "";
+    }
+
+    public function compileHtmlBody(array $variables)
+    {
+        $view = Craft::$app->getView();
+        $currentMode = $view->getTemplateMode();
+        $isFrontTemplate = true;
+        $template = '';
+
+        if(! empty($this->config['template'])) {
+            $template = $this->config['template'];
+        }
+
+        if(! empty($this->config['forms'][$this->form->id]['template'])) {
+            $template = $this->config['forms'][$this->form->id]['template'];
+        }
+
+        if(empty($template) || ! is_string($template)) {
+            $isFrontTemplate = false;
+            $template = $this->defaultTemplate;
+        }
+
+        $currentViewMode = $isFrontTemplate ? $view::TEMPLATE_MODE_SITE : $view::TEMPLATE_MODE_CP;
+        $view->setTemplateMode($currentViewMode);
         $html = $view->renderTemplate($template, [
             'fields' => $variables
         ]);
 
         // Reset
-        $view->setTemplateMode($templateMode);
+        $view->setTemplateMode($currentMode);
+
+        return $html;
+    }
+
+    public function getNotificationHtml(array $variables, string $notificationMessage)
+    {
+        $view = Craft::$app->getView();
+        $currentMode = $view->getTemplateMode();
+        $isFrontTemplate = true;
+        $template = '';
+
+        if (! empty($this->config['notification']['template'])) {
+            $template = $this->config['notification']['template'];
+        }
+
+        if (! empty($this->config['forms'][$this->form->id]['notification']['template'])) {
+            $template = $this->config['forms'][$this->form->id]['notification']['template'];
+        }
+
+        if(empty($template) || ! is_string($template)) {
+            $isFrontTemplate = false;
+            $template = $this->notificationTemplate;
+        }
+
+        $currentViewMode = $isFrontTemplate ? $view::TEMPLATE_MODE_SITE : $view::TEMPLATE_MODE_CP;
+        $view->setTemplateMode($currentViewMode);
+        $html = $view->renderTemplate($template, [
+            'notification_message' => $notificationMessage,
+            'fields' => $variables,
+        ]);
+
+        // Reset
+        $view->setTemplateMode($currentMode);
 
         return $html;
     }

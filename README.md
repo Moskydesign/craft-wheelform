@@ -28,11 +28,14 @@ To install the plugin, follow these instructions.
 - Custom Email HTML Template
 - Template variables for easy development
 - Email Validation based on field type selected
+- Form Field Type for sections
 - Required Fields
 - Checkbox options
+- File extension restriction
 - Honeypot Field
 - Ajax and Redirect friendly
 - Send Form submissions to multiple emails
+- Advanced Permissions per form
 - Reordering of fields
 - Save Uploaded files to Asset Manager
 - Multiple Translations
@@ -56,12 +59,9 @@ Current Field types supported are:
 * Hidden
 * File
 * List
+* HTML
 
 ## Template Variables
-- errors (Array of errors based on field name, form, recaptcha, honeypot).
-
-- values (Array of User submitted values based on field name).
-
 - wheelform
     - settings
     - form
@@ -96,6 +96,45 @@ Current Field types supported are:
             - value
             - type
 
+- wheelformErrors (Array of errors based on field name, form, recaptcha, honeypot).
+
+- values (Array of User submitted values based on field name).
+
+## Form Configuration Options
+These are configuration opens you can pass to `wheelform.open` to configure your form.
+
+- `id`: **Required** ID of the form being used.
+- `redirect`: URL where form will redirect to after a successful submission.
+- `registerScripts`: Boolean to load Scripts before `wheelform.open` call (This is useful for caching forms and templates). Defaults to False.
+- `refreshCsrf`: Boolean to load Javascript that will refresh the CSRF token for the form on the current page (This is useful for caching forms and templates). In order for this to work `form.open()` needs to be outside the `{% cache %}` block.
+- `attributes`: Key: Value Array of Attributes for the current form. Example:
+```twig
+{# Note: Form attributes take presedence over default values #}
+attributes: {
+    'novalidate':"novalidate",
+    'id':'custom-form',
+    'class': 'custom-form',
+}
+```
+- `submitForm`: Configuration options for the submitButton. Example:
+```twig
+{# SubmitButton options:
+    "type" can be button, or input
+    "html" attribute takes precedence over the other properties,
+    "attributes" is an easy way to add attributes to the button, all attributes are optional #}
+
+submitButton: {
+    "type": "button",
+    "label": "Send", // Text displayed for the button
+    "attributes": { // Array of attributes for the Button. Same as Form
+        "class": "btn btn-success",
+        "id": "submit-btn",
+        "data-submit": "Foo",
+    },
+    "html": "<span><button>Custom Button</button></span>", // Custom HTML Overwrittes any other options and will render it as final.
+}
+```
+
 ## Template Structure
 
 Your form template can look something like this:
@@ -112,27 +151,9 @@ Your form template can look something like this:
 {% endmacro %}
 {% from _self import errorList %}
 
-{# In the submitButton options:
-    "type" can be button, or input
-    "html" attribute takes precedence over the other properties,
-    "attributes" is an easy way to add attributes to the button,
-    All attributes are optional #}
 {% set form = wheelform.form({
     id: 1,
-    redirect: 'contact/thanks',
-    attributes: [
-        'novalidate="novalidate"'
-    ],
-    submitButton: {
-        "type": "button",
-        "label": "Send",
-        "attributes": {
-            "class": "btn btn-success",
-            "id": "submit-btn",
-            "data-submit": "Foo",
-        },
-        "html": "<span><button>Custom Button</button></span>",
-    }
+    redirect: 'contact/thanks'
 }) %}
 
 {{ form.open() }}
@@ -163,10 +184,6 @@ Advanced templating:
 {% set form = wheelform.form({
     id: 1,
     redirect: 'contact/thanks',
-    styleClass: "form",
-    attributes: [
-        'novalidate="novalidate"'
-    ],
 }) %}
 
 {{ form.open() }}
@@ -179,7 +196,7 @@ Advanced templating:
             {% case "checkbox" %}
                 <div class="form-checkbox">
                 {% for item in field.items %}
-                </label><input class="checkbox" type="checkbox" value="{{ item }}" {{values[field.name] is defined and item in values[field.name] ? ' checked="checked"' : '' }} name="{{field.name}}[]" id=""/>{{item}}</label>
+                <label><input class="checkbox" type="checkbox" value="{{ item }}" {{values[field.name] is defined and item in values[field.name] ? ' checked="checked"' : '' }} name="{{field.name}}[]" id=""/>{{item}}</label>
                 {% endfor %}
                 </div>
             {% case "radio" %}
@@ -193,7 +210,7 @@ Advanced templating:
                 <div class="form-select">
                 <select id="wf-select" name="{{field.name}}" class="wf-field {{field.fieldClass}}">
                 {% for item in field.items %}
-                    <option value="{{ field.item}}" {{values[field.name] is defined and item == values[field.name] ? 'selected="selected"' : '' }}>{{item}}</option>
+                    <option value="{{ item }}" {{values[field.name] is defined and item == values[field.name] ? 'selected="selected"' : '' }}>{{item}}</option>
                 {% endfor %}
                 </select>
                 </div>
@@ -235,6 +252,7 @@ Advanced templating:
 ```
 
 If you want to stick to HTML and not use the variables:
+
 ```twig
 {% macro errorList(errors) %}
     {% if errors %}
@@ -298,14 +316,26 @@ Note that if you don’t include a `redirect` input, the current page will get r
 
 ### Displaying flash messages
 
-When a contact form is submitted, the plugin will set a `success` flash message on the user session. You can display it in your template like this:
+When a contact form is submitted, the plugin will set a `success` flash message on the user session. This is so, you can have a success message after the form has been submitted and can be displayed on redirected page. You can display it in your template like this:
 
 ```twig
 {% if craft.app.session.hasFlash('wheelformSuccess') %}
     <p class="message success">{{ craft.app.session.getFlash('wheelformSuccess') }}</p>
-{% elseif craft.app.session.hasFlash('wheelformError') %}
-    <p class="message error">{{ craft.app.session.getFlash('wheelformError') }}</p>
 {% endif %}
+```
+
+### Form Field Type
+You can assign a Field Type to your sections where Users can select which form to display based on a Dropdown. This field will return a `wheelform.form` template service (same as other examples) that belongs to the form selected on the Admin Panel. if you need to customize it you can use the `setConfig` variable to modify the default behaviour.
+
+```twig
+{% set form = entry.formField.setConfig({
+    redirect: 'contact/thanks',
+    attributes: {
+        'novalidate':"novalidate",
+        'id':'field-form',
+        'class': 'field-form',
+    },
+}) %}
 ```
 
 ### Displaying the last/current submission
@@ -416,23 +446,65 @@ $('#my-form').submit(function(ev) {
 
 If using getCrsfInput() make sure you are submitting it with the rest of your form.
 
+### Permissions
+There are 4 different type of permissions ({Form Name} permissions are repeated per form on your website):
+- Create new Form - Allows User / Group to see the "New Form" button and create new forms.
+- Edit {Form Name} - Allows User / Group to see the form on the list of forms.
+    - {Form Name} Entries - Allows User / Group to view the Entries list.
+    - {Form Name} Settings - Allows User / Group to Edit the form settings.
+
 ### Form Tools
 - CSV Exporter can be based on entry date, under Admin > Utilities > Form Tools.
 - Form Fields can be exported as a JSON file.
 - Form Fields can be imported from a valid JSON file.
 
-### Custom Email Template
-Custom Twig templates can be used using these steps:
+### Delete Messages Cron Job
+You can schedule a Cron Job on your server to run daily an check to Delete any old Messages values saved on your database. The cron Job Command is:
+`php var/www/yourwebsite/craft wheelform/message/purge` where `var\www\yourwebsite\craft` is the path to the craft executable package.
 
-1. Create `wheelform.php` file inside Craft's config folder.
-2. `wheelform.php` expends an array of configuration settings to be returned. Only `template` variable is required, this is a path to the custom TWIG Template. Example:
+The only configuration needed inside `config\wheelform.php` is:
 
 ```php
 return [
-    'template' => '_emails/custom';
+    'purgeMessages' => true, //True / False value to allow Cron Job to go
+    'purgeMessagesDays' => 30, //Number of days messages should live in your database
 ];
 ```
-3. Inside `custom.html` (or the name you chose for your file on above config) you will have access to a `fields` array. Example
+
+Note: This action cannot be reverted.
+
+### Custom Email Template
+Email Templates are Optional. Custom Twig templates can be used using these steps:
+
+1. Create `wheelform.php` file inside Craft's config folder.
+2. `wheelform.php` expects an array of configuration settings to be returned. The options are:
+    - `template`: default template to use for all emails.
+    - `notification`: default notification template overwrite.
+    - `forms`: is an array that overwrites any settings specific to the form. They key on each array is the ID of the form to modify. (These settings take priority over anything else)
+
+```php
+return [
+    'template' => '_emails/custom',
+    'notification' => [
+        'template' => '_emails/notification',
+        'subject' => 'Default Notification Subject',
+    ],
+    'forms' => [
+        1 => [
+            'template' => '_emails/form1_template',
+            'notification' => [
+                'template' => '_emails/notification2',
+                'subject' => 'Form specific Subject',
+            ],
+        ],
+        3 => [
+            'template' => '_emails/form3_template',
+        ],
+    ],
+];
+```
+3. Inside your templates you will have access to a `fields` array and `notification_message` with the message set on the Form Administration Panel.
+Example:
 
 ```html
 <html>
@@ -445,9 +517,9 @@ return [
         <strong>{{ field.label }}:</strong>
         {% switch field.type %}
 
-        {% case "file" %}
-            {# This is an object with file attributes #}
-            {{ field.value.name }}
+            {% case "file" %}
+                {# This is an object with file attributes #}
+                {{ field.value.name }}
 
             {% case "checkbox" %}
                 {# Array of all choices selected #}
@@ -477,11 +549,15 @@ return [
 ### Honeypot Field
 Honeypot field is a field that is meant to be left blank by humans. Usually hidden by CSS. [More information](https://stackoverflow.com/questions/36227376/better-honeypot-implementation-form-anti-spam) about Honeypot fields.
 
+If not using `{{ form.close() }}` helper tag make sure you add a text field with the name you used when creating the form. Then, hide it from the user using CSS or Javascript.
+
 ### Events
 (Note: this is mostly for developers that know basic PHP and Composer Packages)
 
 `beforeSave` Event, this allows developers to modify the value Active Records objects before being saved to the database, these changes cascade into the other Events and Mailers.
+
 `beforeSend` Event, this allows developers to modify the fields being sent in an email, this event does not modify the values entered in the database. Only the fields being sent to the client.
+
 `afterSend` Event, Final Values sent to the user email, perfect for Third Party integrations and libraries.
 
 You can also trigger other custom functionality such as gathering custom field values to add to a Third party service such as a Mailing list.
@@ -494,8 +570,9 @@ You can also trigger other custom functionality such as gathering custom field v
 * `from` - Email Address message is being send From.
 * `to` - Email Address message is being send To (This can be an array of multiple emails).
 * `reply_to` - Email Address message can be Reply To.
+* `email_html` - Full HTML String that will be sent in the email. This overwrites other email templates.
 
 Example Plugin to handle these events. [wheelformhelper](https://github.com/xpertbot/wheelformhelper)
 
 ### Translations
-New translations can be submitted using the format inside the translations folder.
+New translations can be submitted using the format inside the translations folder. (I will keep "es" translations up to date as much as possible, that can be a good starting point for your translations)

@@ -1,22 +1,22 @@
 <?php
 namespace wheelform\models\fields;
 
-use craft\base\Model;
-
-class File extends Model
+class File extends BaseFieldType
 {
-    public $name;
+    public $name = "File";
 
-    public $filePath;
+    public $type = "file";
 
-    public $assetId;
-
-    public function rules()
+    public function getConfig()
     {
         return [
-            [['name', 'filePath'], 'string'],
-            [['name', 'filePath'], 'required'],
-            ['assetId', 'integer'],
+            [
+                'name' => 'extensions',
+                'type' => 'text',
+                'label' => 'File Extension Restrictions',
+                'description' => 'Comma separated file extensions to be allowed. Leave Blank for all.',
+                'value' => '',
+            ]
         ];
     }
 }

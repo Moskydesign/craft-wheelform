@@ -33,7 +33,7 @@
 }) }}
 <div class="field">
     <div class="heading">
-        <label for="volume_id">{{ "Volume"|t('app')}}</label>
+        <label for="volume_id">{{ "Volume"|t('wheelform')}}</label>
         <div class="instructions">
             {{ "Select an volume folder to save uploaded form files."|t('wheelform') }}
         </div>
@@ -52,7 +52,7 @@
 
 <div class="field">
     <div class="heading">
-        <label for="recaptcha_version">{{ "Recaptcha version"|t('app')}}</label>
+        <label for="recaptcha_version">{{ "Recaptcha version"|t('wheelform')}}</label>
     </div>
     <div class="input ltr">
         {{
@@ -68,18 +68,24 @@
     </div>
 </div>
 
-{{ forms.textField({
+{{ forms.autosuggestField({
     label: "Recaptcha Public Key"|t('wheelform'),
     id: "recaptcha_public",
+    class: 'ltr',
     name: "recaptcha_public",
+    suggestEnvVars: true,
+    suggestAliases: true,
     value: settings.recaptcha_public | default(''),
     errors: settings.getErrors('recaptcha_public'),
     required: false,
 }) }}
 
-{{ forms.textField({
+{{ forms.autosuggestField({
     label: "Recaptcha Private Key"|t('wheelform'),
     id: "recaptcha_secret",
+    class: 'ltr',
+    suggestEnvVars: true,
+    suggestAliases: true,
     name: "recaptcha_secret",
     value: settings.recaptcha_secret | default(''),
     errors: settings.getErrors('recaptcha_secret'),

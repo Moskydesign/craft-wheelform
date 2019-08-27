@@ -3,12 +3,15 @@ namespace wheelform\services;
 
 use Craft;
 use craft\helpers\Template;
-use wheelform\models\Form;
-use wheelform\models\FormField;
-use wheelform\models\Message;
+use wheelform\db\Form;
+use wheelform\db\FormField;
+use wheelform\db\Message;
 use wheelform\Plugin as Wheelform;
 use wheelform\assets\ListFieldAsset;
 use yii\base\ErrorException;
+use yii\helpers\Html;
+use yii\web\YiiAsset;
+use yii\web\View;
 
 class FormService extends BaseService
 {
@@ -20,17 +23,33 @@ class FormService extends BaseService
 
     private $redirect;
 
-    private $method;
-
-    private $buttonLabel;
+    private $method = 'post';
 
     private $submitButton;
 
-    private $attributes;
+    private $_attributes;
 
     private $values;
 
-    private $styleClass;
+    /**
+     * @var boolean
+     */
+    private $_registerScripts = false;
+
+    /**
+     * @var boolean
+     */
+    private $_scriptsLoaded = false;
+
+    /**
+     * @var craft\web\View
+     */
+    protected $view;
+
+    /**
+     * @var boolean
+     */
+    private $_refreshCsrf = false;
 
     public function init()
     {
@@ -43,24 +62,13 @@ class FormService extends BaseService
             throw new ErrorException("Wheelform Form ID not found");
         }
 
+        $this->view = Craft::$app->getView();
+
         if(empty($this->submitButton)) {
-            $this->submitButton = [
-                "label" => Craft::t('app', "Send"),
-                "type" => "input",
-                "attributes" => [
-                    "class" => "",
-                ],
-                "html" => "",
-            ];
+            $this->submitButton = [];
         }
 
-        if(! empty($this->buttonLabel) ) {
-            $this->submitButton['label'] = $this->buttonLabel;
-        }
-
-        if(empty($this->method)) {
-            $this->method = "POST";
-        }
+        $this->submitButton = array_replace_recursive($this->getDefaultSubmitButton(), $this->submitButton);
 
         $params = Craft::$app->getUrlManager()->getRouteParams();
 
@@ -68,24 +76,25 @@ class FormService extends BaseService
         {
             $this->values = $params['variables']['values'];
         }
+
+        $this->_attributes = $this->getFormAttributes();
+
+        if($this->_registerScripts) {
+            $this->handleScripts();
+        }
     }
 
     public function open()
     {
-        $enctype = '';
-        if( $this->isMultipart() ) {
-            $enctype = "enctype=\"multipart/form-data\"";
-        }
-        $method = strtoupper($this->method);
-        $html = "<form id=\"{$this->generateId()}\" method=\"{$method}\" ";
-        $html .= (empty($this->styleClass) ? '' : " class='{$this->styleClass}' ");
-        $html .= (!empty($this->attributes) ? (is_array($this->attributes) ? implode(' ', $this->attributes) : $this->attributes ) : '');
-        $html .= " {$enctype}>";
-        $html .= $this->generateCsrf();
-        $html .= "<input type=\"hidden\" name=\"form_id\" value=\"{$this->id}\" />";
-        $html .= "<input type=\"hidden\" name=\"action\" value=\"wheelform/message/send\" />";
+        $html = Html::beginForm("", $this->method, $this->_attributes);
+        $html .= Html::hiddenInput('form_id', $this->id);
+        $html .= Html::hiddenInput('action', "/wheelform/message/send");
         if($this->redirect) {
-            $html .=  "<input type=\"hidden\" name=\"redirect\" value=\"{$this->hashUrl($this->redirect)}\" />";
+            $html .= Html::hiddenInput('redirect', $this->hashUrl($this->redirect));
+        }
+
+        if($this->_scriptsLoaded === false) {
+            $this->handleScripts();
         }
 
         return Template::raw($html);
@@ -95,24 +104,27 @@ class FormService extends BaseService
     {
         $html = '';
         $settings = Wheelform::getInstance()->getSettings();
-        if(intval($this->instance->recaptcha) && ! empty($settings['recaptcha_public'])) {
+        $recaptcha_public = empty($settings['recaptcha_public']) ? "" : Craft::parseEnv($settings['recaptcha_public']);
+        if(intval($this->instance->recaptcha) && ! empty($recaptcha_public)) {
             if(! empty($settings['recaptcha_version'] && $settings['recaptcha_version'] == '3')) {
                 $html .= $this->renderRecaptchaV3Event();
             } else {
-                $html .= "<div><script src=\"https://www.google.com/recaptcha/api.js\"></script><!-- Production captcha --><div class=\"g-recaptcha\" data-sitekey=\"{$settings['recaptcha_public']}\"></div></div>";
+                $html .= "<div>";
+                $html .= Html::jsFile('https://www.google.com/recaptcha/api.js');
+                $html .= "<div class=\"g-recaptcha\" data-sitekey=\"{$recaptcha_public}\"></div>";
+                $html .= "</div>";
             }
         }
 
         if(! empty($this->instance->options['honeypot']) ) {
             $hpValue = empty($this->values[$this->instance->options['honeypot']]) ? '' : $this->values[$this->instance->options['honeypot']];
-            $html .= "<input type=\"text\" class=\"wf-{$this->instance->options['honeypot']}-{$this->id}\"
-                name=\"{$this->instance->options['honeypot']}\" value=\"{$hpValue}\" />";
+            $html .= Html::textInput($this->instance->options['honeypot'], $hpValue, [
+                'class' => "wf-{$this->instance->options['honeypot']}-{$this->id}",
+            ]);
         }
-        if($this->hasList()) {
-            $html .= $this->registerListAsset();
-        }
+
         $html .= $this->renderSubmitButton();
-        $html .= '</form>';
+        $html .= Html::endForm();
         return Template::raw($html);
     }
 
@@ -177,8 +189,26 @@ class FormService extends BaseService
         return (bool) $this->instance->recaptcha;
     }
 
+    public function getId()
+    {
+        return $this->id;
+    }
+
+    public function getName()
+    {
+        return $this->instance->name;
+    }
 
     //Setters
+    public function setConfig($config)
+    {
+        \Yii::configure($this, $config);
+
+        $this->submitButton = array_replace_recursive($this->getDefaultSubmitButton(), $this->submitButton);
+
+        return $this; // Don't break the chain in templates;
+    }
+
     public function setId($value)
     {
         $this->id = $value;
@@ -199,11 +229,6 @@ class FormService extends BaseService
         $this->method = $value;
     }
 
-    public function setButtonLabel($value)
-    {
-        $this->buttonLabel = $value;
-    }
-
     public function setSubmitButton($value)
     {
         $this->submitButton = $value;
@@ -211,15 +236,54 @@ class FormService extends BaseService
 
     public function setAttributes($value)
     {
-        $this->attributes = $value;
+        $this->_attributes = $value;
     }
 
-    public function setStyleClass($value)
+    /**
+     * @param bool $value
+     * @return void
+     */
+    public function setRegisterScripts($value)
     {
-        $this->styleClass = $value;
+        $this->_registerScripts = $value;
+    }
+
+    /**
+     * @param bool $value
+     * @return void
+     */
+
+    public function setRefreshCsrf($value)
+    {
+        $this->_refreshCsrf = $value;
     }
 
     // Protected
+    protected function getFormAttributes()
+    {
+        $defaultAttributes = [
+            'id' => $this->generateId(),
+            'class' => '',
+        ];
+
+        $attributes = [];
+
+        if(is_null($this->_attributes)) {
+            $this->_attributes = [];
+        }
+
+        if(! empty($this->_attributes) && is_array($this->_attributes)) {
+            // Merge Arrays
+            $attributes = array_merge($defaultAttributes, $this->_attributes);
+        }
+
+        if($this->isMultipart()) {
+            $attributes['enctype'] = "multipart/form-data";
+        }
+
+        return $attributes;
+    }
+
     protected function generateId()
     {
         $name = $this->instance->name;
@@ -248,24 +312,6 @@ class FormService extends BaseService
         return( ! empty($field));
     }
 
-    protected function registerListAsset()
-    {
-        $view = Craft::$app->getView();
-        $view->registerAssetBundle(ListFieldAsset::class);
-    }
-
-    protected function generateCsrf()
-    {
-        $config = Craft::$app->getConfig()->getGeneral();
-        if ($config->enableCsrfProtection === true)
-        {
-            $request = Craft::$app->getRequest();
-            return '<input type="hidden" name="'.$config->csrfTokenName.'" value="'.$request->getCsrfToken().'">';
-        }
-
-        return '';
-    }
-
     protected function loadMessage($model)
     {
         if(empty($model)) {
@@ -291,11 +337,11 @@ class FormService extends BaseService
     protected function renderRecaptchaV3Event()
     {
         $fieldId = "wheelform-g-recaptcha-token-". uniqid();
-        $html = "<input type=\"hidden\" name=\"g-recaptcha-response\" id=\"{$fieldId}\" value=\"\" />";
-        $html .= "<script>WheelformRecaptcha.callbacks.push(function(token){
-            var field = document.getElementById('{$fieldId}');
+        $html = Html::hiddenInput('g-recaptcha-response', "", ['id' => $fieldId]);
+        $html .= Html::script("WheelformRecaptcha.callbacks.push(function(token){
+            var field = document.getElementById('$fieldId');
             field.setAttribute('value', token);
-        })</script>";
+        })");
         return $html;
     }
 
@@ -305,18 +351,47 @@ class FormService extends BaseService
             return $this->submitButton['html'];
         }
 
-        $attributes = "";
+        $attributes = [];
         if(!empty($this->submitButton["attributes"]) && is_array($this->submitButton["attributes"])) {
-            foreach($this->submitButton["attributes"] as $att => $value) {
-                $attributes .= " {$att}=\"{$value}\"";
-            }
+            $attributes = $this->submitButton["attributes"];
         }
+
         if($this->submitButton['type'] == "button") {
-            $html = "<button {$attributes}>{$this->submitButton['label']}</button>";
+            $attributes['type'] = 'submit';
+            $html = Html::button($this->submitButton['label'], $attributes);
         } else {
-            $html = "<input type=\"submit\" {$attributes} value=\"{$this->submitButton['label']}\" />";
+            $html = Html::input('submit', "wf-submit", $this->submitButton['label'], $attributes);
         }
 
         return $html;
+    }
+
+    protected function handleScripts()
+    {
+        $this->view->registerCsrfMetaTags();
+
+        if($this->hasList()) {
+            $this->view->registerAssetBundle(ListFieldAsset::class, View::POS_END);
+        }
+
+        if($this->_refreshCsrf) {
+            $this->view->registerAssetBundle(YiiAsset::class);
+            $this->view->registerJs("window.yii.refreshCsrfToken()");
+        }
+
+        $this->_scriptsLoaded = true;
+    }
+
+    //Private
+    private function getDefaultSubmitButton()
+    {
+        return [
+            'label' => Craft::t('app', "Send"),
+            "type" => "input",
+            "attributes" => [
+                "class" => "",
+            ],
+            "html" => "",
+        ];
     }
 }

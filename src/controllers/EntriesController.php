@@ -3,17 +3,20 @@ namespace wheelform\controllers;
 
 use Craft;
 use craft\web\Controller;
-use wheelform\models\Form;
-use wheelform\models\FormField;
-use wheelform\models\Message;
-use wheelform\models\MessageValue;
-use wheelform\helpers\ExportHelper;
-use yii\web\HttpException;
-use yii\base\Exception;
-use yii\data\Pagination;
-use yii\widgets\LinkPager;
 use craft\helpers\Path;
 use craft\helpers\DateTimeHelper;
+use craft\helpers\UrlHelper;
+
+use wheelform\db\Form;
+use wheelform\db\FormField;
+use wheelform\db\Message;
+use wheelform\db\MessageValue;
+use wheelform\helpers\ExportHelper;
+use wheelform\widgets\LinkPager;
+
+
+use yii\web\HttpException;
+use yii\base\Exception;
 
 class EntriesController extends Controller
 {
@@ -21,25 +24,35 @@ class EntriesController extends Controller
     {
         $params = Craft::$app->getUrlManager()->getRouteParams();
         $form_id = intval($params['id']);
+
+        $this->requirePermission('wheelform_view_entries_' . $form_id);
+
         $form = Form::findOne($form_id);
         if (! $form) {
             throw new HttpException(404);
         }
 
+        $request = Craft::$app->getRequest();
         $query = Message::find()->where(['form_id' => $form_id]);
-        $count = $query->count();
-        $pages = new Pagination(['totalCount' => $count]);
-        $pages->setPageSize(50);
+        $total = $query->count();
+        $limit = (int) $request->getParam('limit', 50);
+        $currentPage = (int) $request->getParam('page', 1);
+        $offset = ($currentPage - 1) * $limit;
 
         $entries = $query
             ->orderBy(['dateCreated' => SORT_DESC])
             ->with('value')
-            ->offset($pages->offset)
-            ->limit($pages->limit)
+            ->offset($offset)
+            ->limit($limit)
             ->all();
 
         $pager = LinkPager::widget([
-            'pagination' => $pages,
+            'baseUrl' => $request->getPathInfo(),
+            'limit' => $limit,
+            'currentPage' => $currentPage,
+            'totalCount' => $total,
+            // 'firstPageLabel' => "First",
+            // 'lastPageLabel' => "Last",
         ]);
 
         $headerFields = FormField::find()
@@ -48,6 +61,7 @@ class EntriesController extends Controller
             ->all();
 
         return $this->renderTemplate('wheelform/_entries.twig', [
+            'form_id' => $form_id,
             'entries' => $entries,
             'pager' => $pager,
             'headerFields' => $headerFields,
@@ -76,7 +90,8 @@ class EntriesController extends Controller
         return $this->renderTemplate('wheelform/_entry.twig', [
             'messageValues' => $messageValues,
             'entry' => $message,
-            'form_id' => $message->form->id
+            'form_id' => $message->form->id,
+            'backUrl' => UrlHelper::cpUrl('wheelform/form/'.$message->form->id.'/entries'),
         ]);
     }
 
@@ -115,6 +130,37 @@ class EntriesController extends Controller
 
     }
 
+    public function actionUpdateEntries()
+    {
+        $this->requirePostRequest();
+
+        $request = Craft::$app->getRequest();
+        $read_status = $request->getRequiredBodyParam('read_status');
+        $params = [
+            'read' => $read_status,
+        ];
+        $message_ids = $request->getBodyParam('message_id', []);
+        $result = Message::updateAll($params, ['IN', "id", $message_ids]);
+
+        if ($result === false) {
+            if ($request->getAcceptsJson()) {
+                return $this->asJson(['success' => false]);
+            }
+
+            Craft::$app->getSession()->setError(Craft::t('app', 'Couldn’t udpate entries.'));
+
+        } else {
+            if ($request->getAcceptsJson()) {
+                return $this->asJson(['success' => true]);
+            }
+
+            Craft::$app->getSession()->setNotice(Craft::t('app', 'Entries updated.'));
+        }
+
+        return $this->redirectToPostedUrl();
+
+    }
+
     public function actionDeleteEntry()
     {
         $this->requirePostRequest();
@@ -144,6 +190,31 @@ class EntriesController extends Controller
         Craft::$app->getSession()->setNotice(Craft::t('app', 'Entry deleted.'));
 
         return $this->redirectToPostedUrl($entry);
+    }
+
+    public function actionDeleteEntries()
+    {
+        $this->requirePostRequest();
+
+        $request = Craft::$app->getRequest();
+        $message_ids = $request->getBodyParam('message_id', []);
+
+        MessageValue::deleteAll(['in', 'message_id', $message_ids]);
+        $result = Message::deleteAll(['in', 'id', $message_ids]);
+
+        if ($result === false) {
+            if (Craft::$app->getRequest()->getAcceptsJson()) {
+                return $this->asJson(['success' => false]);
+            }
+            Craft::$app->getSession()->setError(Craft::t('app', 'Couldn’t delete entries.'));
+        } else {
+            if (Craft::$app->getRequest()->getAcceptsJson()) {
+                return $this->asJson(['success' => true]);
+            }
+            Craft::$app->getSession()->setNotice(Craft::t('app', 'Entries deleted.'));
+        }
+
+        return $this->redirectToPostedUrl();
     }
 
     public function actionExport()

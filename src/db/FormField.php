@@ -1,26 +1,26 @@
 <?php
-namespace wheelform\models;
+namespace wheelform\db;
 
 use Craft;
 use craft\db\ActiveRecord;
 use wheelform\behaviors\JsonFieldBehavior;
 use wheelform\validators\JsonValidator;
+use wheelform\behaviors\FormFieldBehavior;
 
 class FormField extends ActiveRecord
 {
 
-    const FIELD_TYPES = [
-        'text',
-        'textarea',
-        'email',
-        'number',
-        'checkbox',
-        'radio',
-        'hidden',
-        'select',
-        'file',
-        'list',
-    ];
+    const TEXT_SCENARIO = "text";
+    const TEXTAREA_SCENARIO = "textarea";
+    const NUMBER_SCENARIO = "number";
+    const EMAIL_SCENARIO = "email";
+    const CHECKBOX_SCENARIO = "checkbox";
+    const RADIO_SCENARIO = "radio";
+    const HIDDEN_SCENARIO = "hidden";
+    const SELECT_SCENARIO = "select";
+    const FILE_SCENARIO = "file";
+    const LIST_SCENARIO = "list";
+    const HTML_SCENARIO = "html";
 
     public static function tableName(): String
     {
@@ -38,7 +38,7 @@ class FormField extends ActiveRecord
                 'message' => Craft::t('wheelform', '{attribute} must be a number.')],
             [['active'], 'default', 'value' => 1],
             [['required', 'index_view'], 'default', 'value' => 0],
-            ['type', 'in', 'range' => self::FIELD_TYPES],
+            ['type', 'in', 'range' => array_keys($this->getFieldTypeClasses())],
             ['options', JsonValidator::class],
         ];
     }
@@ -58,7 +58,7 @@ class FormField extends ActiveRecord
     public function getLabel()
     {
         if (! empty($this->options['label'])) {
-            return $this->options['label'];
+            return \Craft::t('site', $this->options['label']);
         }
         $label = trim(str_replace(['_', '-'], " ", $this->name));
         $label = ucfirst($label);
@@ -70,13 +70,24 @@ class FormField extends ActiveRecord
         return $this->hasMany(MessageValue::className(), ['field_id' => 'id']);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function behaviors()
     {
         return [
             'json_field_behavior' => [
                 'class' => JsonFieldBehavior::class,
                 'attributes' => ['options'],
-            ]
+            ],
+            FormFieldBehavior::class,
+        ];
+    }
+
+    public static function getVisualFields()
+    {
+        return [
+            self::HTML_SCENARIO,
         ];
     }
 }

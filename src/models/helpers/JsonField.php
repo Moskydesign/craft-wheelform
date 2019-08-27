@@ -2,7 +2,7 @@
 namespace wheelform\models\helpers;
 
 use yii\base\Arrayable;
-use yii\base\InvalidParamsException;
+use yii\base\InvalidParamException;
 use yii\helpers\Json;
 
 class JsonField implements \ArrayAccess, Arrayable
@@ -57,7 +57,7 @@ class JsonField implements \ArrayAccess, Arrayable
 
     public function toArray(array $fields = [], array $expand = [], $recursive = true)
     {
-        return empty($fields) ? $this->value : array_intersect_key($this->value, array_flip($field));
+        return empty($fields) ? $this->value : array_intersect_key($this->value, array_flip($fields));
     }
 
     public function isEmpty()
@@ -87,11 +87,11 @@ class JsonField implements \ArrayAccess, Arrayable
     {
         if($offset === null)
         {
-            $this->value[] = $value;
+            $this->value[] = $set;
         }
         else
         {
-            $this->value[$offset] = $value;
+            $this->set[$offset] = $set;
         }
     }
 

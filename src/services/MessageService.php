@@ -1,8 +1,7 @@
 <?php
 namespace wheelform\services;
 
-use wheelform\models\Message;
-use craft\helpers\DateTimeHelper;
+use wheelform\db\Message;
 
 class MessageService extends BaseService
 {

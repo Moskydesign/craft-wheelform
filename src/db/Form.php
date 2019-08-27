@@ -1,13 +1,13 @@
 <?php
-namespace wheelform\models;
+namespace wheelform\db;
 
 use Craft;
 use craft\db\ActiveRecord;
-use yii\validators\EmailValidator;
 use craft\helpers\StringHelper;
-use wheelform\models\Message;
+use wheelform\db\Message;
 use wheelform\behaviors\JsonFieldBehavior;
 use wheelform\validators\JsonValidator;
+use yii\validators\EmailValidator;
 
 //Using Active Record because it extends Models.
 //__get() in BaseActiveRecord does not allow properties to be predefined it sets them to null;
@@ -42,13 +42,12 @@ class Form extends ActiveRecord
     {
         return $this->hasMany(FormField::className(), ['form_id' => 'id'])
             ->orderBy(['order' => SORT_ASC])
-            ->andOnCondition(['active' => 1]);
+            ->andOnCondition([FormField::tableName().'.active' => 1]);
     }
 
     public function getEntryCount(): int
     {
-         if ($this->isNewRecord)
-         {
+        if ($this->isNewRecord) {
             return null; // this avoid calling a query searching for null primary keys
         }
 

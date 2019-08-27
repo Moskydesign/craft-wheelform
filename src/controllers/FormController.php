@@ -2,132 +2,147 @@
 namespace wheelform\controllers;
 
 use Craft;
-use wheelform\Plugin;
 use craft\helpers\Path;
-use yii\base\Exception;
-
-use craft\web\Controller;
 use craft\web\UploadedFile;
-use wheelform\models\Form;
-use yii\web\HttpException;
-use wheelform\models\FormField;
-use yii\behaviors\SessionBehavior;
+
+use wheelform\Plugin;
+use wheelform\db\Form;
+use wheelform\db\FormField;
 use wheelform\helpers\ExportHelper;
 use wheelform\models\tools\ImportFile;
 
-class FormController extends Controller
+use yii\base\Exception;
+use yii\helpers\Json;
+use yii\web\HttpException;
+use yii\web\Response;
+use Yii;
+
+class FormController extends BaseController
 {
+    protected $settings;
+    public function init()
+    {
+        $this->settings = Plugin::getInstance()->getSettings();
+        if (!$this->settings->validate()) {
+            Craft::$app->getSession()->setError(Craft::t('wheelform', 'Plugin settings need to be configured.'));
+        }
+
+        parent::init();
+    }
 
     function actionIndex()
     {
-        $forms = Form::find()->orderBy(['dateCreated' => SORT_ASC])->all();
+        $formModels = Form::find()->orderBy(['dateCreated' => SORT_ASC])->all();
+        $forms = [];
+        $user = Craft::$app->getUser();
 
-        $settings = Plugin::getInstance()->getSettings();
-        if (!$settings->validate()) {
-            Craft::$app->getSession()->setError(Craft::t('wheelform', 'Plugin settings need to be configured.'));
+        foreach($formModels as $formModel) {
+            if($user->checkPermission('wheelform_edit_form_' . $formModel->id)) {
+                $forms[] = $formModel;
+            }
         }
 
         return $this->renderTemplate('wheelform/_index.twig', [
             'wheelforms' => $forms,
-            'title' => $settings->cp_label,
+            'title' => $this->settings->cp_label,
+        ]);
+    }
+
+    function actionNew()
+    {
+        $this->requirePermission('wheelform_new_form');
+
+        $form = new Form();
+        $fieldTypes = Json::encode($this->getFieldTypes());
+         // Render the template
+         return $this->renderTemplate('wheelform/_edit-form.twig', [
+            'form' => $form,
+            'fieldTypes' => $fieldTypes,
+            'CPLabel' => $this->settings->cp_label,
         ]);
     }
 
     function actionEdit()
     {
         $params = Craft::$app->getUrlManager()->getRouteParams();
+        $form = null;
 
-        if (! empty($params['id']))
-        {
+        if (! empty($params['id'])) {
             $form = Form::findOne(intval($params['id']));
-            if (! $form) {
-                throw new HttpException(404);
-            }
-        }
-        elseif(! empty($params['form']))
-        {
+        } elseif(! empty($params['form'])) {
             $form = $params['form'];
         }
-        else
-        {
-            $form = new Form();
+
+        if (! $form) {
+            throw new HttpException(404);
         }
+
+        $this->requirePermission('wheelform_change_settings_' . $form->id);
+
+        $fieldTypes = Json::encode($this->getFieldTypes());
 
         // Render the template
         return $this->renderTemplate('wheelform/_edit-form.twig', [
-            'form' => $form
+            'form' => $form,
+            'fieldTypes' => $fieldTypes,
+            'CPLabel' => $this->settings->cp_label,
         ]);
     }
 
-    function actionSave()
+    public function actionSave()
     {
         $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
         $request = Craft::$app->getRequest();
 
-        $form_id = $request->getBodyParam('form_id');
-        if ($form_id)
-        {
-            $form = Form::findOne(intval($form_id));
+        $data = json_decode($request->getRawBody(), TRUE);
+        if (! empty($data['id'])) {
+            $form = Form::findOne(intval($data['id']));
             if (! $form) {
-                throw new Exception(Craft::t('wheelform', 'No form exists with the ID “{id}”.', array('id' => $form_id)));
+                throw new Exception(Craft::t('wheelform', 'No form exists with the ID “{id}”.', array('id' => $form->id)));
             }
-        }
-        else
-        {
+        } else {
             $form = new Form();
         }
 
-        $form->name = $request->getBodyParam('name');
-        $form->to_email = $request->getBodyParam('to_email');
-        $form->active = $request->getBodyParam('active', 0);
-        $form->send_email = $request->getBodyParam('send_email', 0);
-        $form->recaptcha = $request->getBodyParam('recaptcha', 0);
-        $form->save_entry = intval($request->post('save_entry', 0));
-        $form->options = $request->post('options', []);
+        $form->name = $data['name'];
+        $form->to_email = $data['to_email'];
+        $form->active = $data['active'];
+        $form->send_email = $data['send_email'];
+        $form->recaptcha = $data['recaptcha'];
+        $form->save_entry = $data['save_entry'];
+        $form->options = $data['options'];
         $form->site_id = Craft::$app->sites->currentSite->id;
 
         $result = $form->save();
 
-        Craft::$app->getUrlManager()->setRouteParams([
-            'form' => $form
-        ]);
         if(! $result){
-            Craft::$app->getSession()->setError(Craft::t('wheelform', 'Couldn’t save form.'));
-            return null;
+            return $this->asJson(['success' => false, 'errors' => $form->getErrors()]);
         }
 
         //Rebuild fields
         $oldFields = FormField::find()->select('id')->where(['form_id' => $form->id])->all();
-        $newFields = $request->getBodyParam('fields', []);
+        $newFields = $data['fields'];
         //Get ID of fields that are missing on the oldFields compared to newfields
         $toDeleteIds = $this->getToDeleteIds($oldFields, $newFields);
 
-        if(! empty($newFields))
-        {
-            foreach($newFields as $field)
-            {
+        if(! empty($newFields)) {
+            foreach($newFields as $field) {
                 //If field name is empty skip it, but don't delete it, only delete it if delete icon is clicked.
                 if(empty($field['name'])) continue;
 
-                if(intval($field['id']) > 0)
-                {
+                if(isset($field['id']) && intval($field['id']) > 0) {
                     //update Field Values
                     $formField = FormField::find()->where(['id' => $field['id']])->one();
-                    if(! empty($formField))
-                    {
+                    if(! empty($formField)) {
                         $formField->setAttributes($field, false);
 
                         if($formField->validate()){
                             $formField->save();
                         }
-                        else
-                        {
-                            //do nothing for now
-                        }
                     }
-                }
-                else
-                {
+                } else {
                     //unassign id to not autopopulate it on model; PostgreSQL doesn't like set ids
                     unset($field['id']);
 
@@ -135,8 +150,7 @@ class FormController extends Controller
                     $formField = new FormField();
                     $formField->setAttributes($field, false);
 
-                    if($formField->save())
-                    {
+                    if($formField->save()) {
                         $form->link('fields', $formField);
                     }
                 }
@@ -157,12 +171,31 @@ class FormController extends Controller
             )->execute();
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('wheelform', 'Form saved.'));
-        return $this->redirectToPostedUrl();
+        return $this->asJson(['success' => true, 'message' =>  Craft::t('wheelform', 'Form saved.'), 'form_id' => $form->id]);
+    }
+
+    public function actionDelete()
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $request = Craft::$app->getRequest();
+
+        $data = json_decode($request->getRawBody(), TRUE);
+        if (empty($data['id'])) {
+            throw new Exception(Craft::t('wheelform', 'No form selected.'));
+        }
+
+        $form = Form::findOne(intval($data['id']));
+        if (! $form) {
+            throw new Exception(Craft::t('wheelform', 'No form exists with the ID “{id}”.', array('id' => $form->id)));
+        }
+
+        return $this->asJson(['success' => $form->delete(), 'message' =>  Craft::t('wheelform', 'Form deleted.')]);
     }
 
     // currently this field only accepts json fields
-    public function actionGetFields()
+    public function actionGetSettings()
     {
         $req =  Craft::$app->getRequest();
 
@@ -177,9 +210,38 @@ class FormController extends Controller
             throw new HttpException(404);
         }
 
-        $fields = FormField::find()->where(['form_id' => $formId, 'active' => 1])->orderBy('order', SORT_ASC)->all();
+        $form = Form::find()->where(['id' => $formId])->with('fields')->one();
+        $data = [
+            'id' => $form->id,
+            'name' => $form->name,
+            'to_email' => $form->to_email,
+            'active' => $form->active,
+            'send_email' => $form->send_email,
+            'recaptcha' => $form->recaptcha,
+            'save_entry' => $form->save_entry,
+            'options' => (!empty($form->options) ? json_decode($form->options) : NULL),
+        ];
 
-        return $this->asJson($fields);
+        foreach($form->fields as $field) {
+            $data['fields'][] = [
+                'id' => $field->id,
+                'form_id' => $field->form_id,
+                'name' => $field->name,
+                'type' => $field->type,
+                'required' => $field->required,
+                'index_view' => $field->index_view,
+                'order' => $field->order,
+                'active' => $field->active,
+                'options' => (!empty($field->options) ? json_decode($field->options) : NULL),
+                'fieldComponent' => $field->model->fieldComponent,
+            ];
+        }
+
+        $response = Yii::$app->getResponse();
+        $response->format = Response::FORMAT_JSON;
+        $response->data = json_encode($data, JSON_NUMERIC_CHECK);
+
+        return $response;
     }
 
     public function actionExportFields()

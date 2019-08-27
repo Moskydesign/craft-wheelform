@@ -1,92 +1,75 @@
 {% extends "_layouts/cp" %}
 
-{% import "_includes/forms" as formEl %}
+{% do view.registerTranslations('wheelform', [
+    'Active',
+    'Add',
+    'Add Field',
+    'Are you sure you want to delete Field',
+    'Are you sure you want to delete Form',
+    'Back',
+    'Cancel',
+    'Container class',
+    'Delete',
+    'Default Empty?',
+    'Drag Fields',
+    'Edit Fields',
+    'Email Subject',
+    'Field class',
+    'Field placeholder',
+    'Form Name',
+    'Honeypot',
+    'Index View',
+    'Item to validate',
+    'Label',
+    'More Options',
+    'Name',
+    'Name contains whitespaces',
+    'Name is not unique',
+    'Name of this Form in the CP.',
+    'Name of hidden field that helps prevent bot spam. Leave empty to disable.',
+    'Notification',
+    'Message that will be displayed on the body of the user Notification Email',
+    'Options',
+    'Reply-to Email',
+    'Required',
+    'Save',
+    'Save Entries',
+    'Save Entries to database',
+    'Send Email',
+    'Send Email needs to be active for this feature to work',
+    'Subject for the Admin email',
+    'The email address(es) that the contact form will send to. Separate multiple email addresses with commas.',
+    'To Email',
+    'Type',
+    'User Notification',
+    'User Notification Field',
+    'User Notification Message',
+    'Validate',
+]) %}
 
 {% do view.registerAssetBundle("wheelform\\assets\\WheelformCpAsset") %}
 
-{% set title = (form.id is defined ? 'Edit Form'|t : 'New Form'|t) %}
-{% set docsUrl = 'https://github.com/xpertbot/craft-wheelform' %}
+{% set title = (form.id is empty ? 'New Form' : 'Edit Form') | t('wheelform') %}
 
 {% set crumbs = [
-    { label: 'Wheel Form', url: url('wheelform') },
+    { label: CPLabel, url: url('wheelform') },
 ] %}
 
-{% set fullPageForm = true %}
+{% set sidebar = 1 %}
 
-{% block content %}
+{% js at head %}
+    window.Wheelform = {
+        form_id: {{ form.id ? form.id : 0 }},
+        fieldTypes: {{ fieldTypes | raw }}
+    }
+{% endjs %}
 
-    <input type="hidden" name="action" value="wheelform/form/save">
-    {{ redirectInput('wheelform') }}
-    <input type="hidden" name="changed_fields" id="changed_fields" value="0">
-    {% if form.id is defined %}<input type="hidden" name="form_id" value="{{ form.id }}">{% endif %}
+{% block main %}
 
-    {{ formEl.textField({
-        label: "Form Name"|t,
-        id: 'name',
-        name: 'name',
-        value: form.name,
-        errors: form.getErrors('name'),
-        first: true,
-        autofocus: true,
-        required: true,
-        instructions: 'Name of this Form in the CP.'|t('wheelform'),
-    }) }}
-
-    {{ formEl.textField({
-        label: "To Email"|t,
-        id: 'to_email',
-        name: 'to_email',
-        value: form.to_email,
-        errors: form.getErrors('to_email'),
-        required: true,
-        instructions: 'The email address(es) that the contact form will send to. Separate multiple email addresses with commas.'|t('wheelform'),
-    }) }}
-
-    {{ formEl.textField({
-        label: "Honeypot"|t,
-        id: 'options[honeypot]',
-        name: 'options[honeypot]',
-        value: (form.options['honeypot'] is defined ? form.options['honeypot'] : ''),
-        errors: form.getErrors('options[honeypot]'),
-        instructions: 'Name of hidden field that helps prevent bot spam. Leave empty to disable.'|t('wheelform'),
-    }) }}
-
-    {{ formEl.lightswitchField({
-        label: "Active"|t('wheelform'),
-        id: 'active',
-        name: 'active',
-        on: (form.active is null ? true : form.active),
-    }) }}
-
-    {{ formEl.lightswitchField({
-        label: "Save Entries"|t('wheelform'),
-        instructions: "Save Entries to database"|t('wheelform'),
-        id: 'save_entry',
-        name: 'save_entry',
-        on: (form.save_entry is null ? true : form.save_entry),
-    }) }}
-
-    {{ formEl.lightswitchField({
-        label: "Send Email"|t('wheelform'),
-        id: 'send_email',
-        name: 'send_email',
-        on: (form.send_email is null ? true : form.send_email),
-    }) }}
-
-    {{ formEl.lightswitchField({
-        label: "Recaptcha"|t('wheelform'),
-        id: 'recaptcha',
-        name: 'recaptcha',
-        on: (form.recaptcha is null ? false : form.recaptcha),
-    }) }}
-
-    {% js at head %}
-        window.Wheelform = {
-            form_id: {{ form.id ? form.id : 0 }}
-        }
-    {% endjs %}
-    <div id="formapp">
+    <div id="wheelform-app">
         <Container />
     </div>
 
 {% endblock %}
+
+{% block foot %}{% endblock %}

@@ -4,6 +4,138 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/) and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## 2.2.3 - 2019-01-08
+### Fixed
+- Fixed bug where files were being uploaded after form errors.
+
+## 2.2.2 - 2019-25-07
+### Fixed
+- Ability to delete HTML fields
+
+## 2.2.1 - 2019-15-07
+### Fixed
+- Bug related to deleted form not displaying correctly on form fields.
+
+## 2.2.0 - 2019-13-07
+### Added
+- Added ability to delete forms.
+### Fixed
+- Fixed Pagination on entries list
+- Fixed Items not deleting correctly in Multi options fields.
+
+## 2.1.1 - 2019-07-06
+### Added
+- Added ability to restrict type of files uploaded.
+
+## 2.1.0 - 2019-06-19
+### Added
+- Added ability to use Aliases inside Recaptcha fields.
+- Added `name` variable for individual forms.
+### Fixed
+- Fixed typo in README
+- Fixed error on new forms with no fields present
+
+## 2.0.2 - 2019-05-05
+### Fixed
+- Fixed placeholder for Email and Textarea
+
+## 2.0.1 - 2019-05-03
+### Fixed
+- Fixed Form Attributes not displaying correctly
+
+## 2.0.0 - 2019-04-29
+### Improved
+- Improved Form Field configuration page.
+- Improved Field Configuration options
+- Faster Form Submission
+
+### Added
+- Added new HTMl Field
+- Added French Translation (@timbertens)
+
+## 1.25.3 - 2019-04-07
+### Fixed
+- Fixed Bug on Form Service
+
+## 1.25.2 - 2019-04-04
+### Fixed
+- Fixed Bug related to Cron Job Command to Purge Messages (@luke-nehemedia).
+
+## 1.25.1 - 2019-04-01
+### Fixed
+- Fixed Bug related to Deprecation error on form Attributes.
+
+## 1.25.0 - 2019-03-30
+### Added
+- Added ability to create Cron Jobs to delete Messages after a determined amount of days.
+- Added new form configuration to allow assets to be registered before getting cached.
+### Fixed
+- Fixed Bug related to Form Field trying to render itself when already instantiated.
+
+## 1.24.1 - 2019-03-13
+### Improved
+- Improved the way the Twig Services render the form, Now using Yii2 Html helpers to display the forms and the CSRF fields
+
+## 1.24.0 - 2019-03-13
+### Added
+- Custom Subject to Admin Email.
+- Reply-to Field lightswitch to Forms.
+- Portuguese translations.
+### Improved
+- Improved Translations setup.
+- Improved Spanish Translations.
+
+## 1.23.0 - 2019-02-25
+### Improved
+- Improved UI for Form Settings so Advanced Options are collapsed by default.
+### Added
+- Added Form Field Type, Where users can select a form and display on the templates.
+
+## 1.22.0 - 2019-02-18
+### Added
+- Added Notification to form submissions.
+### Fixed
+- Fixed Bug that would duplicate forms after initial save
+
+## 1.21.1 - 2019-02-14
+### Fixed
+- Fixed error being thrown on group permissions for bad namespace.
+
+## 1.21.0 - 2019-02-12
+### Added
+- Added Permissions for different aspects of the forms.
+
+## 1.20.4 - 2019-02-11
+### Fixed
+- RecpatchaV2 not working on some server setups.
+## Improved
+- Improved Attributes passed on the template to overwritte form default attribute values.
+
+## 1.20.3 - 2019-02-08
+### Fixed
+- Multiple field values not updating correctly.
+
+## 1.20.2 - 2019-02-08
+### Fixed
+- Order not saving correctly introduced on Last Patch.
+
+## 1.20.1 - 2019-02-08
+### Fixed
+- Critical update to fix new options not loading correctly on Edit Form View.
+
+## 1.20.0 - 2019-01-26
+### Added
+- Added New Actions to Entries view.
+###Improved
+- Improved Form Settings Layout, 2 column layout for form field configuration
+
+## 1.19.0 - 2019-01-19
+### Added
+- Added Placeholders to field options.
+- Added email_html to beforeSend Event that allows overwrite of the email template completely.
+- Added ability to add specific tempaltes based on form ID.
+- Added ability to Labels to be translatable.
+
 ## 1.18.0 - 2019-01-13
 ### Added
 - Added RecaptchaV3 Integration.
